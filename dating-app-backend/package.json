@@ -1,0 +1,25 @@
+{
+  "name": "dating-app-backend",
+  "version": "1.0.0",
+  "description": "Signup flow backend for dating app (Phone OTP + Google login + Face verification + KYC)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.577.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "google-auth-library": "^9.10.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.5",
+    "twilio": "^5.0.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

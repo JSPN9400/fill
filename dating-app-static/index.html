@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Milan — Sign up</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-frame">
+
+    <!-- Progress bar + back button (hidden on welcome/success) -->
+    <div id="progress-wrap" style="display:none;">
+      <div class="progress-track" id="progress-track"></div>
+      <div class="top-bar">
+        <button class="back-button" id="back-btn" aria-label="Go back">←</button>
+        <span class="step-label" id="step-label"></span>
+      </div>
+    </div>
+
+    <!-- STEP: welcome -->
+    <div class="content" id="step-welcome" style="justify-content:center;">
+      <div class="center-text">
+        <div class="brand">Milan</div>
+        <p class="step-subtitle">Real people, verified faces. No fake profiles, no spam — just genuine matches nearby.</p>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-start">Create account</button>
+    </div>
+
+    <!-- STEP: phone -->
+    <div class="content" id="step-phone" style="display:none;">
+      <h1 class="step-title">What's your phone number?</h1>
+      <p class="step-subtitle">We'll send you a code to confirm it's really you.</p>
+      <div id="phone-error"></div>
+      <div class="field">
+        <label>Phone number</label>
+        <input type="tel" id="phone-input" placeholder="+919876543210" />
+      </div>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-send-otp" disabled>Send code</button>
+    </div>
+
+    <!-- STEP: otp -->
+    <div class="content" id="step-otp" style="display:none;">
+      <h1 class="step-title">Enter the code</h1>
+      <p class="step-subtitle" id="otp-subtitle">We sent a 6-digit code.</p>
+      <div class="hint-banner" id="otp-hint">Backend is in MOCK_MODE — use code <strong>123456</strong> to continue.</div>
+      <div id="otp-error"></div>
+      <div class="field">
+        <label>Verification code</label>
+        <input type="text" id="otp-input" inputmode="numeric" maxlength="6" placeholder="123456" />
+      </div>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-verify-otp" disabled>Verify</button>
+    </div>
+
+    <!-- STEP: google -->
+    <div class="content" id="step-google" style="display:none;">
+      <h1 class="step-title">Link your Gmail</h1>
+      <p class="step-subtitle">One Gmail account = one profile. This keeps the account recoverable and stops duplicate profiles.</p>
+      <div class="hint-banner" id="google-hint">MOCK_MODE: real Google Sign-In isn't wired up yet — just enter any Gmail + name to simulate it.</div>
+      <div id="google-error"></div>
+      <div class="field">
+        <label>Gmail address</label>
+        <input type="email" id="google-email" placeholder="you@gmail.com" />
+      </div>
+      <div class="field">
+        <label>Full name (from Google)</label>
+        <input type="text" id="google-name" placeholder="Priya Sharma" />
+      </div>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-google" disabled>Continue with Gmail</button>
+    </div>
+
+    <!-- STEP: face -->
+    <div class="content" id="step-face" style="display:none;">
+      <h1 class="step-title">Verify your face</h1>
+      <p class="step-subtitle">Look straight into the camera in good light. This confirms you're a real person.</p>
+      <div id="face-error"></div>
+      <div id="camera-error"></div>
+      <div class="camera-frame">
+        <video id="camera-video" autoplay playsinline muted></video>
+        <img id="camera-preview" style="display:none;" alt="Captured face" />
+        <div class="camera-ring" id="camera-ring"></div>
+      </div>
+      <canvas id="camera-canvas" style="display:none;"></canvas>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-capture">Capture photo</button>
+      <button class="btn-primary" id="btn-use-photo" style="display:none;">Use this photo</button>
+      <button class="btn-secondary" id="btn-retake" style="display:none;">Retake</button>
+    </div>
+
+    <!-- STEP: id verify -->
+    <div class="content" id="step-id" style="display:none;">
+      <h1 class="step-title">Verify your ID</h1>
+      <p class="step-subtitle">Kept private and never shown on your profile. Used only to confirm you're a real, unique person.</p>
+      <div class="hint-banner" id="id-hint">MOCK_MODE: any ID number will be accepted and auto-verified.</div>
+      <div id="id-error"></div>
+      <div class="field">
+        <label>ID type</label>
+        <div class="chip-group" id="id-type-chips">
+          <div class="chip selected" data-value="Aadhaar">Aadhaar</div>
+          <div class="chip" data-value="Passport">Passport</div>
+          <div class="chip" data-value="Driving licence">Driving licence</div>
+        </div>
+      </div>
+      <div class="field">
+        <label id="id-number-label">Aadhaar number</label>
+        <input type="text" id="id-number-input" placeholder="Enter number" />
+      </div>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-verify-id" disabled>Verify ID</button>
+    </div>
+
+    <!-- STEP: profile -->
+    <div class="content" id="step-profile" style="display:none;">
+      <h1 class="step-title">Tell us about you</h1>
+      <p class="step-subtitle">This is what people will see first.</p>
+      <div id="profile-error"></div>
+      <div class="field"><label>Full name</label><input type="text" id="p-name" /></div>
+      <div class="field"><label>Date of birth</label><input type="date" id="p-dob" /></div>
+      <div class="field">
+        <label>I am</label>
+        <div class="chip-group" id="gender-chips">
+          <div class="chip" data-value="Male">Male</div>
+          <div class="chip" data-value="Female">Female</div>
+          <div class="chip" data-value="Other">Other</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Show me</label>
+        <div class="chip-group" id="interest-chips">
+          <div class="chip" data-value="Male">Male</div>
+          <div class="chip" data-value="Female">Female</div>
+          <div class="chip" data-value="Other">Other</div>
+        </div>
+      </div>
+      <div class="field"><label>Nationality</label><input type="text" id="p-nationality" value="Indian" /></div>
+      <div class="field"><label>State</label><input type="text" id="p-state" placeholder="e.g. Maharashtra" /></div>
+      <div class="field"><label>City</label><input type="text" id="p-city" placeholder="e.g. Pune" /></div>
+      <div class="field"><label>Area (optional)</label><input type="text" id="p-area" placeholder="e.g. Koregaon Park" /></div>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-finish" disabled>Finish</button>
+    </div>
+
+    <!-- STEP: success -->
+    <div class="content" id="step-success" style="display:none; justify-content:center;">
+      <div class="success-badge">✓</div>
+      <div class="center-text">
+        <h1 class="step-title">You're all set</h1>
+        <p class="step-subtitle" id="success-message">Your account has been created and verified.</p>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn-primary" onclick="location.reload()">Start over (test again)</button>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

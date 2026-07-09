@@ -1,0 +1,274 @@
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --text: #262626;
+  --text-muted: #8e8e8e;
+  --border: #dbdbdb;
+  --danger: #ed4956;
+  --success: #2e7d32;
+  --gradient: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #f77737 100%);
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  font-family: var(--font-body);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-frame {
+  max-width: 430px;
+  min-height: 100vh;
+  margin: 0 auto;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* ---- Top segmented progress bar (echoes the step-by-step nature of signup) ---- */
+.progress-track {
+  display: flex;
+  gap: 6px;
+  padding: 16px 20px 0;
+}
+
+.progress-segment {
+  flex: 1;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-segment.filled {
+  background: var(--gradient);
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px 4px;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.step-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.content {
+  flex: 1;
+  padding: 8px 24px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 34px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin: 12px 0 4px;
+  letter-spacing: -0.5px;
+}
+
+h1.step-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  margin: 18px 0 6px;
+  color: var(--text);
+}
+
+p.step-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 24px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-family: var(--font-body);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: #833ab4;
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.chip.selected {
+  background: var(--gradient);
+  border-color: transparent;
+  color: white;
+}
+
+.spacer { flex: 1; }
+
+.cta-area {
+  padding: 12px 24px 28px;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--gradient);
+  color: white;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.error-banner {
+  background: #fdeceb;
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.hint-banner {
+  background: #f0f7ff;
+  color: #1565c0;
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ---- Face scan camera ---- */
+.camera-frame {
+  aspect-ratio: 3 / 4;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: #111;
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.camera-frame video,
+.camera-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-ring {
+  position: absolute;
+  inset: 12px;
+  border: 3px dashed rgba(255, 255, 255, 0.6);
+  border-radius: 50% / 40%;
+  pointer-events: none;
+}
+
+/* ---- Success screen ---- */
+.success-badge {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: white;
+  margin: 40px auto 20px;
+}
+
+.center-text {
+  text-align: center;
+}
