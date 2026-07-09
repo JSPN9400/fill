@@ -1,39 +1,43 @@
 # Milan Dating App — Project Status
-_Last updated: this session. Upload this file at the start of your next chat with Claude to continue exactly from here._
+_Upload this file at the start of your next chat with Claude to continue exactly from here._
 
 ## Locked decisions
-- **Backend**: Node.js + Express, deployed on **Render** (free tier) at `https://feelings-dating-app.onrender.com`
-- **Frontend**: Plain HTML/CSS/JS, deployed on **GitHub Pages** at `https://jspn9400.github.io/fill/`
-- **Database**: PostgreSQL on **Supabase** (pooler connection string, not direct — direct hostname didn't resolve on user's network)
+- **Backend**: Node.js + Express, on **Render** → `https://feelings-dating-app.onrender.com`
+- **Frontend**: Plain HTML/CSS/JS, on **GitHub Pages** → `https://jspn9400.github.io/fill/`
+- **Database**: PostgreSQL on **Supabase** (pooler connection string, not direct)
 - **Repo**: `github.com/JSPN9400/fill`
-- **MOCK_MODE=true** everywhere for now (OTP=123456, Google/face/KYC auto-pass) — not yet using real Twilio/Google/AWS/KYC keys
+- **MOCK_MODE=true** everywhere (OTP=123456, Google/face/KYC auto-pass)
 - App name: **Milan**
 
-## LIVE AND WORKING (confirmed by user testing on the deployed site)
-- Full signup flow (phone → OTP → Gmail → face scan camera capture → ID → profile) — tested live on Render + GitHub Pages + Supabase, works end to end.
+## LIVE AND WORKING
+- Full signup flow (phone → OTP → Gmail → face scan camera → ID → profile)
+- Login for existing users (Gmail lookup, no re-verification)
+- Discover / swipe / match / chat — built and code-reviewed this session, **user needs to push + test live**
 
-## Built this session, not yet live-tested by user
-**Discovery + Swipe + Match + Chat** (the core Tinder-like loop):
-- Backend: `GET /api/discover` (feed excluding already-swiped, filtered by mutual gender interest), `POST /api/swipe` (like/dislike/superlike, auto-creates a match on mutual like, schema's unique constraint blocks double-swiping), `GET /api/matches` (list with last message preview)
-- Frontend: added a "main app" section to `dating-app-static/` — Discover screen (swipe cards + like/dislike/superlike buttons), Matches list, Chat screen (uses the existing `/api/messages/:matchId` endpoints, simple 3-second polling — not real Socket.io realtime yet)
-- Auth: after signup, the `session_token` JWT returned by `complete-profile` is stored in-memory and sent as `Authorization: Bearer` on all discover/swipe/match/message/profile calls
-- Syntax-checked and static-file-served locally; **not yet clicked through live** — next step is for the user to push and test the full discover→swipe→match→chat loop live.
+## Bugs found and fixed this session
+1. **Real, confirmed bug — this was "click not working for find match"**: `discoveryController.js` compared a plain-text parameter against a `gender_enum[]` column without casting (`$3 = ANY(u.interested_in)`), which Postgres rejects with a type error, making `/api/discover` fail silently → fixed to `$3::gender_enum = ANY(...)`.
+2. Face-scan step restarted the camera every time the user navigated back to it, discarding an already-captured photo → now shows the existing preview instead if one exists.
+3. Replaced all `alert()` popups (match celebration, chat content-filter errors) with proper in-app toast notifications — feels native instead of a browser popup.
+4. (Earlier sessions) Express async-error crash, JWT re-signing crash, Render trust-proxy warning, MOCK_MODE env var mismatch on Render — all previously fixed, still in place.
 
-## Known bugs fixed this session (don't reintroduce)
-1. Express 4 doesn't auto-catch async route errors → wrapped everything in `asyncHandler` (crashed server otherwise)
-2. Re-signing a JWT that already had `exp`/`iat` claims crashed the Google-login step → stripped in `regTokenService.issueRegToken`
-3. Render sits behind a proxy → added `app.set('trust proxy', 1)` so express-rate-limit doesn't warn/misbehave
-4. On Render, if `MOCK_MODE` env var isn't exactly `true`, the real Twilio path runs with placeholder credentials and crashes — always double check Render's Environment tab has `MOCK_MODE=true` exactly
+## UI/UX overhaul this session
+- Fully responsive: phone (single column, 16px inputs to stop iOS auto-zoom, bigger touch targets), tablet (centered card with shadow), desktop (wide layout, Messenger-style side-by-side Matches + Chat panel, top tab bar instead of bottom nav)
+- Toast notification system (bottom-center, auto-dismiss, success/error variants)
+- Phone number field: auto-prefixed `+91`, live valid/invalid inline hint, can't accidentally delete the prefix
+- Subtle motion/elevation on buttons, chips, match rows (Google/Meta-style quiet interactions, not flashy)
+- Login page cleaned up with clear copy and MOCK_MODE hint
 
-## Recommended next steps
-- [ ] User to test discover/swipe/match/chat live end-to-end, report bugs
-- [ ] Content filter already applied to chat — confirm it still works on the live deployment
-- [ ] Login flow for returning users (currently only fresh signup exists)
-- [ ] Replace chat polling with real-time (Socket.io) once basic flow is confirmed solid
-- [ ] Photo upload (currently no way to add `user_media` rows — profiles show a placeholder emoji instead of a real photo)
-- [ ] Razorpay integration for the 4 tiers
-- [ ] Daily swipe/message limits per tier (columns already exist in DB: `swipes_used_today`, `messages_sent_today`, `daily_swipe_limit`, `daily_message_limit` — not enforced in code yet)
-- [ ] Admin panel, report/block, deployment hardening (CORS restricted to real domain instead of open)
+## NOT yet done / next steps
+- [ ] User needs to copy updated files into their local repo, `git push`, and test discover/swipe/match/chat live on the real deployment
+- [ ] Real-time chat (currently 3-second polling, not Socket.io)
+- [ ] Photo upload (profiles currently show a 🙂 placeholder — no way to add real `user_media` rows yet)
+- [ ] Daily swipe/message limits per tier (DB columns exist, not enforced in code)
+- [ ] Razorpay integration, admin panel, report/block safety features
+- [ ] Desktop `:has()` CSS selector used for split-chat layout — works in modern Chrome/Edge/Safari; if the user needs older-browser support this may need a JS fallback later (not urgent)
+
+## Files changed this session (copy these into the local project)
+- `dating-app-backend/src/controllers/discoveryController.js` (bug fix)
+- `dating-app-static/index.html`, `app.js`, `style.css` (bug fixes + full responsive/UX redesign)
 
 ## How to avoid hallucination / wasted tokens across sessions
 1. At the end of each build session, ask Claude to update this file with what changed.

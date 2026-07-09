@@ -162,4 +162,28 @@ async function completeProfile(req, res) {
   res.status(201).json({ message: 'Account created', user_id: userId, session_token: sessionToken });
 }
 
-module.exports = { sendOtp, verifyOtp, googleLogin, faceScan, idVerify, completeProfile };
+// ---------- LOGIN (existing users) ----------
+
+async function loginWithGoogle(req, res) {
+  const { google_id_token } = req.body;
+  if (!google_id_token) return res.status(400).json({ error: 'google_id_token is required' });
+
+  const { googleId, email, emailVerified } = await googleAuthService.verifyGoogleToken(google_id_token);
+  if (!emailVerified) return res.status(400).json({ error: 'Gmail account is not verified' });
+
+  const result = await pool.query(
+    'SELECT id, display_name FROM users WHERE google_id = $1 OR email = $2',
+    [googleId, email]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'No account found with this Gmail. Please sign up first.' });
+  }
+
+  const user = result.rows[0];
+  const sessionToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+  res.json({ message: 'Logged in', user_id: user.id, display_name: user.display_name, session_token: sessionToken });
+}
+
+module.exports = { sendOtp, verifyOtp, googleLogin, faceScan, idVerify, completeProfile, loginWithGoogle };

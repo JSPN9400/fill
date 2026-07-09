@@ -18,7 +18,7 @@ const state = {
   chatPollTimer: null,
 };
 
-const STEPS = ['welcome', 'phone', 'otp', 'google', 'face', 'id', 'profile', 'success'];
+const STEPS = ['welcome', 'login', 'phone', 'otp', 'google', 'face', 'id', 'profile', 'success'];
 const STEP_LABELS = {
   phone: 'Step 1 of 5 · Phone number',
   otp: 'Step 1 of 5 · Verify code',
@@ -36,7 +36,7 @@ function showStep(name) {
   $(`step-${name}`).style.display = 'flex';
 
   const progressWrap = $('progress-wrap');
-  if (name === 'welcome' || name === 'success') {
+  if (name === 'welcome' || name === 'success' || name === 'login') {
     progressWrap.style.display = 'none';
   } else {
     progressWrap.style.display = 'block';
@@ -44,8 +44,11 @@ function showStep(name) {
     renderProgress(STEP_PROGRESS[name] ?? 0);
   }
 
-  if (name === 'face') startCamera();
-  else stopCamera();
+  if (name === 'face') {
+    if (state.faceBlob) showCapturedPreview(); else startCamera();
+  } else {
+    stopCamera();
+  }
 }
 
 function renderProgress(current, total = 5) {
@@ -106,12 +109,61 @@ function back() {
 
 $('back-btn').addEventListener('click', back);
 $('btn-start').addEventListener('click', () => goTo('phone'));
+$('btn-go-login').addEventListener('click', () => {
+  $('login-hint').style.display = MOCK_MODE ? 'block' : 'none';
+  goTo('login');
+});
+
+// ===== Login (existing users) =====
+$('login-email').addEventListener('input', () => {
+  $('btn-login').disabled = !/\S+@gmail\.com$/.test($('login-email').value.trim());
+});
+
+$('btn-login').addEventListener('click', async () => {
+  showError('login-error', '');
+  const btn = $('btn-login');
+  btn.disabled = true;
+  btn.textContent = 'Logging in…';
+  try {
+    const fakeIdToken = JSON.stringify({ email: $('login-email').value.trim(), name: 'Returning User' });
+    const result = await apiPost('/login/google', { google_id_token: fakeIdToken });
+    state.sessionToken = result.session_token;
+    historyStack = ['welcome'];
+    $('step-login').style.display = 'none';
+    $('main-app').style.display = 'flex';
+    showScreen('discover');
+    loadDiscoverFeed();
+  } catch (err) {
+    showError('login-error', err.message);
+    btn.disabled = false;
+  } finally {
+    btn.textContent = 'Continue with Gmail';
+  }
+});
 
 // ===== Phone step =====
 const phoneInput = $('phone-input');
+
+// Put the cursor after +91 on first focus so typing the number is instant
+phoneInput.addEventListener('focus', () => {
+  if (phoneInput.value === '+91') {
+    const pos = phoneInput.value.length;
+    phoneInput.setSelectionRange(pos, pos);
+  }
+});
+
 phoneInput.addEventListener('input', () => {
-  const valid = /^\+91[6-9]\d{9}$/.test(phoneInput.value.trim());
+  let val = phoneInput.value;
+  // Keep the +91 prefix intact even if the user tries to delete it
+  if (!val.startsWith('+91')) {
+    val = '+91' + val.replace(/^\+?91?/, '').replace(/\D/g, '');
+    phoneInput.value = val;
+  }
+  const valid = /^\+91[6-9]\d{9}$/.test(val.trim());
   $('btn-send-otp').disabled = !valid;
+  const hint = $('phone-hint');
+  hint.textContent = valid ? '✓ Looks good' : '10-digit Indian mobile number, starting with 6-9';
+  hint.classList.toggle('valid', valid);
 });
 
 $('btn-send-otp').addEventListener('click', async () => {
@@ -186,6 +238,28 @@ $('btn-google').addEventListener('click', async () => {
 });
 
 // ===== Face scan step =====
+function showCapturedPreview() {
+  $('camera-video').style.display = 'none';
+  $('camera-ring').style.display = 'none';
+  $('camera-preview').style.display = 'block';
+  $('btn-capture').style.display = 'none';
+  $('btn-use-photo').style.display = 'block';
+  $('btn-retake').style.display = 'block';
+}
+
+function showToast(message, variant = 'default') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${variant}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3200);
+}
+
 async function startCamera() {
   showError('camera-error', '');
   $('camera-preview').style.display = 'none';
@@ -440,7 +514,7 @@ async function doSwipe(swipeType) {
     state.discoverFeed.shift();
     renderCardStack();
     if (result.matched) {
-      setTimeout(() => alert(`🎉 It's a match with ${person.display_name}!`), 100);
+      showToast(`🎉 It's a match with ${person.display_name}!`, 'success');
     }
   } catch (err) {
     showError('discover-error', err.message);
@@ -529,6 +603,6 @@ async function sendChatMessage() {
     });
     loadMessages();
   } catch (err) {
-    alert(err.message); // e.g. content-filter rejection ("please don't share contact info…")
+    showToast(err.message, 'error'); // e.g. content-filter rejection ("please don't share contact info…")
   }
 }

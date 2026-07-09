@@ -19,7 +19,7 @@ async function getFeed(req, res) {
      FROM users u
      WHERE u.id != $1
        AND u.gender = ANY($2::gender_enum[])
-       AND $3 = ANY(u.interested_in)
+       AND $3::gender_enum = ANY(u.interested_in)
        AND u.id NOT IN (SELECT swipee_id FROM swipes WHERE swiper_id = $1)
      ORDER BY u.created_at DESC
      LIMIT $4`,

@@ -16,5 +16,6 @@ router.post('/signup/google', asyncHandler(authController.googleLogin));
 router.post('/signup/face-scan', upload.single('face_image'), asyncHandler(authController.faceScan));
 router.post('/signup/id-verify', asyncHandler(authController.idVerify));
 router.post('/signup/complete-profile', asyncHandler(authController.completeProfile));
+router.post('/login/google', asyncHandler(authController.loginWithGoogle));
 
 module.exports = router;
