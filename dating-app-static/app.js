@@ -1,5 +1,5 @@
 // ===== CONFIG: change this to your Render backend URL once deployed =====
-const API_BASE_URL = 'http://localhost:5034/api/auth';
+const API_BASE_URL = 'https://feelings-dating-app.onrender.com/api/auth';
 const MOCK_MODE = true; // matches backend .env MOCK_MODE — flip both together
 
 // ===== Simple state =====
