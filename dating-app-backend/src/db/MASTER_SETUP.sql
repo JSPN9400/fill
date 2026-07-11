@@ -133,7 +133,31 @@ CREATE TABLE IF NOT EXISTS feelings (
 CREATE INDEX IF NOT EXISTS idx_feelings_created ON feelings(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feelings_user ON feelings(user_id);
 
+-- ---------- 8. Refresh tokens ----------
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(128) NOT NULL,
+    device_info TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+
+-- ---------- 9. Notifications ----------
+CREATE TABLE IF NOT EXISTS notifications (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type VARCHAR(50) NOT NULL,
+    data JSONB DEFAULT '{}',
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+
 -- ============================================================
 -- DONE. Expected tables: user_tiers, users, user_media, swipes,
--- matches, messages, feelings
+-- matches, messages, feelings, refresh_tokens, notifications
 -- ============================================================
+

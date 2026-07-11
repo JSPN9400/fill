@@ -4,7 +4,13 @@ const googleAuthService = require('../services/googleAuthService');
 const faceService = require('../services/faceVerificationService');
 const kycService = require('../services/kycService');
 const { issueRegToken, verifyRegToken } = require('../services/regTokenService');
+const refreshTokenService = require('../services/refreshTokenService');
 const jwt = require('jsonwebtoken');
+
+// Helper to generate access token
+function generateAccessToken(userId) {
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+}
 
 // ---------- STEP 1: Phone number ----------
 
@@ -113,7 +119,7 @@ async function idVerify(req, res) {
   const regToken = issueRegToken({
     ...progress,
     kyc_reference_id: kycResult.referenceId,
-    kyc_status: kycResult.status, // 'verified' or 'pending' (some providers verify async via webhook)
+    kyc_status: kycResult.status,
     id_verified: true,
     step: 'id',
   });
@@ -148,7 +154,7 @@ async function completeProfile(req, res) {
       name,
       dob,
       gender,
-      interested_in, // expects an array, e.g. ['male','female']
+      interested_in,
       nationality,
       state,
       city,
@@ -160,8 +166,6 @@ async function completeProfile(req, res) {
 
   const userId = insertResult.rows[0].id;
 
-  // Save the profile photo (base64 for now — see PROJECT_STATUS.md note on
-  // swapping this for real object storage before real users show up)
   if (photo_base64) {
     await pool.query(
       'INSERT INTO user_media (user_id, media_url, display_order) VALUES ($1, $2, 0)',
@@ -169,9 +173,16 @@ async function completeProfile(req, res) {
     );
   }
 
-  const sessionToken = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  const accessToken = generateAccessToken(userId);
+  const refreshToken = refreshTokenService.generateToken();
+  await refreshTokenService.saveRefreshToken(userId, refreshToken, req.headers['user-agent']);
 
-  res.status(201).json({ message: 'Account created', user_id: userId, session_token: sessionToken });
+  res.status(201).json({ 
+    message: 'Account created', 
+    user_id: userId, 
+    session_token: accessToken,
+    refresh_token: refreshToken
+  });
 }
 
 // ---------- LOGIN (existing users) ----------
@@ -193,9 +204,105 @@ async function loginWithGoogle(req, res) {
   }
 
   const user = result.rows[0];
-  const sessionToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = refreshTokenService.generateToken();
+  await refreshTokenService.saveRefreshToken(user.id, refreshToken, req.headers['user-agent']);
 
-  res.json({ message: 'Logged in', user_id: user.id, display_name: user.display_name, session_token: sessionToken });
+  res.json({ 
+    message: 'Logged in', 
+    user_id: user.id, 
+    display_name: user.display_name, 
+    session_token: accessToken,
+    refresh_token: refreshToken
+  });
 }
 
-module.exports = { sendOtp, verifyOtp, googleLogin, faceScan, idVerify, completeProfile, loginWithGoogle };
+// ---------- PHONE LOGIN FOR EXISTING USERS ----------
+
+async function loginWithPhoneSendOtp(req, res) {
+  const { phone_number } = req.body;
+  if (!phone_number) return res.status(400).json({ error: 'phone_number is required' });
+
+  const existing = await pool.query('SELECT id FROM users WHERE phone_number = $1', [phone_number]);
+  if (existing.rows.length === 0) {
+    return res.status(404).json({ error: 'No account found with this phone number. Please sign up first.' });
+  }
+
+  await otpService.sendOtp(phone_number);
+  res.json({ message: 'OTP sent' });
+}
+
+async function loginWithPhoneVerifyOtp(req, res) {
+  const { phone_number, code } = req.body;
+  if (!phone_number || !code) return res.status(400).json({ error: 'phone_number and code are required' });
+
+  const approved = await otpService.checkOtp(phone_number, code);
+  if (!approved) return res.status(400).json({ error: 'Invalid or expired OTP' });
+
+  const result = await pool.query('SELECT id, display_name FROM users WHERE phone_number = $1', [phone_number]);
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const user = result.rows[0];
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = refreshTokenService.generateToken();
+  await refreshTokenService.saveRefreshToken(user.id, refreshToken, req.headers['user-agent']);
+
+  res.json({ 
+    message: 'Logged in', 
+    user_id: user.id, 
+    display_name: user.display_name, 
+    session_token: accessToken,
+    refresh_token: refreshToken
+  });
+}
+
+// ---------- REFRESH TOKEN ----------
+
+async function refreshToken(req, res) {
+  const { refresh_token } = req.body;
+  if (!refresh_token) return res.status(400).json({ error: 'refresh_token is required' });
+
+  const userId = await refreshTokenService.verifyRefreshToken(refresh_token);
+  if (!userId) {
+    return res.status(401).json({ error: 'Invalid or expired refresh token' });
+  }
+
+  // Generate new token pair (refresh token rotation)
+  const newAccessToken = generateAccessToken(userId);
+  const newRefreshToken = refreshTokenService.generateToken();
+  
+  // Revoke old token and save new token
+  await refreshTokenService.revokeRefreshToken(refresh_token);
+  await refreshTokenService.saveRefreshToken(userId, newRefreshToken, req.headers['user-agent']);
+
+  res.json({
+    session_token: newAccessToken,
+    refresh_token: newRefreshToken
+  });
+}
+
+// ---------- LOGOUT ----------
+
+async function logout(req, res) {
+  const { refresh_token } = req.body;
+  if (!refresh_token) return res.status(400).json({ error: 'refresh_token is required' });
+
+  await refreshTokenService.revokeRefreshToken(refresh_token);
+  res.json({ message: 'Logged out successfully' });
+}
+
+module.exports = { 
+  sendOtp, 
+  verifyOtp, 
+  googleLogin, 
+  faceScan, 
+  idVerify, 
+  completeProfile, 
+  loginWithGoogle,
+  loginWithPhoneSendOtp,
+  loginWithPhoneVerifyOtp,
+  refreshToken,
+  logout
+};

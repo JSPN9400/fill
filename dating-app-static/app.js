@@ -1,5 +1,8 @@
 // ===== CONFIG: change this to your Render backend URL once deployed =====
-const API_BASE_URL = 'https://fillings-backend.onrender.com/api/auth';
+const DEFAULT_API_BASE = 'https://fillings-backend.onrender.com/api/auth';
+const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? (window.__API_BASE_URL__ || 'http://localhost:5000/api/auth')
+  : (window.__API_BASE_URL__ || DEFAULT_API_BASE);
 const API_ROOT = API_BASE_URL.replace(/\/auth$/, ''); // for /discover, /swipe, /matches, /messages, /profile
 const MOCK_MODE = true; // matches backend .env MOCK_MODE — flip both together
 
@@ -17,6 +20,9 @@ const state = {
   discoverFeed: [],
   activeMatchId: null,
   chatPollTimer: null,
+  socket: null,
+  socketReconnectTimer: null,
+  typingTimer: null,
 };
 
 const STEPS = ['welcome', 'login', 'phone', 'otp', 'google', 'face', 'id', 'profile', 'success'];
@@ -135,14 +141,48 @@ function hideWakeupNotice() {
 async function authFetch(path, options = {}) {
   const wakeupTimer = setTimeout(showWakeupNotice, 2500);
   try {
-    const res = await fetch(`${API_ROOT}${path}`, {
+    let res = await fetch(`${API_ROOT}${path}`, {
       ...options,
       headers: {
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
         Authorization: `Bearer ${state.sessionToken}`,
         ...(options.headers || {}),
       },
     });
+
+    if (res.status === 401 && state.refreshToken) {
+      console.log('Access token expired. Refreshing token...');
+      try {
+        const refreshRes = await fetch(`${API_ROOT}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: state.refreshToken })
+        });
+        
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          state.sessionToken = refreshData.session_token;
+          state.refreshToken = refreshData.refresh_token;
+          localStorage.setItem('session_token', refreshData.session_token);
+          localStorage.setItem('refresh_token', refreshData.refresh_token);
+          
+          res = await fetch(`${API_ROOT}${path}`, {
+            ...options,
+            headers: {
+              ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+              Authorization: `Bearer ${state.sessionToken}`,
+              ...(options.headers || {}),
+            },
+          });
+        } else {
+          handleForceLogout();
+        }
+      } catch (refreshErr) {
+        console.error('Error refreshing token:', refreshErr);
+        handleForceLogout();
+      }
+    }
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Something went wrong');
     return data;
@@ -150,6 +190,20 @@ async function authFetch(path, options = {}) {
     clearTimeout(wakeupTimer);
     hideWakeupNotice();
   }
+}
+
+function handleForceLogout() {
+  localStorage.removeItem('session_token');
+  localStorage.removeItem('refresh_token');
+  state.sessionToken = '';
+  state.refreshToken = '';
+  if (state.socket) {
+    state.socket.disconnect();
+    state.socket = null;
+  }
+  $('main-app').style.display = 'none';
+  showStep('welcome');
+  showToast('Session expired. Please log in again.', 'error');
 }
 
 // ===== Step navigation =====
@@ -188,16 +242,46 @@ $('btn-login').addEventListener('click', async () => {
     const fakeIdToken = JSON.stringify({ email: $('login-email').value.trim(), name: 'Returning User' });
     const result = await apiPost('/login/google', { google_id_token: fakeIdToken });
     state.sessionToken = result.session_token;
+    state.refreshToken = result.refresh_token;
+    localStorage.setItem('session_token', result.session_token);
+    localStorage.setItem('refresh_token', result.refresh_token);
     historyStack = ['welcome'];
     $('step-login').style.display = 'none';
     $('main-app').style.display = 'flex';
     showScreen('discover');
     loadDiscoverFeed();
+    initSocket();
   } catch (err) {
     showError('login-error', err.message);
     btn.disabled = false;
   } finally {
     btn.textContent = 'Continue with Gmail';
+  }
+});
+
+const loginPhoneInput = $('login-phone-input');
+loginPhoneInput.addEventListener('input', () => {
+  let val = loginPhoneInput.value;
+  if (!val.startsWith('+91')) {
+    val = '+91' + val.replace(/^\+?91?/, '').replace(/\D/g, '');
+    loginPhoneInput.value = val;
+  }
+  $('btn-login-phone-send-otp').disabled = !/^\+91[6-9]\d{9}$/.test(val.trim());
+});
+
+$('btn-login-phone-send-otp').addEventListener('click', async () => {
+  showError('login-phone-error', '');
+  const btn = $('btn-login-phone-send-otp');
+  btn.disabled = true;
+  btn.textContent = 'Sending code…';
+  try {
+    await apiPost('/login/phone/send-otp', { phone_number: loginPhoneInput.value.trim() });
+    showToast('Phone OTP sent. Use 123456 in mock mode.', 'success');
+  } catch (err) {
+    showError('login-phone-error', err.message);
+  } finally {
+    btn.disabled = !/^\+91[6-9]\d{9}$/.test(loginPhoneInput.value.trim());
+    btn.textContent = 'Send phone code';
   }
 });
 
@@ -503,6 +587,9 @@ $('btn-finish').addEventListener('click', async () => {
     });
     $('success-message').textContent = `Your account has been created and verified. (user id: ${result.user_id}) Time to find real matches nearby.`;
     state.sessionToken = result.session_token;
+    state.refreshToken = result.refresh_token;
+    localStorage.setItem('session_token', result.session_token);
+    localStorage.setItem('refresh_token', result.refresh_token);
     goTo('success');
   } catch (err) {
     showError('profile-error', err.message);
@@ -513,7 +600,41 @@ $('btn-finish').addEventListener('click', async () => {
 });
 
 // ===== Init =====
-showStep('welcome');
+function initGeolocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        state.latitude = position.coords.latitude;
+        state.longitude = position.coords.longitude;
+        console.log('Location permission granted:', state.latitude, state.longitude);
+      },
+      (error) => {
+        console.warn('Geolocation error or permission denied:', error.message);
+      }
+    );
+  }
+}
+
+// Restore session and theme
+const savedToken = localStorage.getItem('session_token');
+const savedRefreshToken = localStorage.getItem('refresh_token');
+const savedTheme = localStorage.getItem('theme') || 'light';
+
+document.documentElement.setAttribute('data-theme', savedTheme);
+const themeChk = $('theme-toggle-chk');
+if (themeChk) themeChk.checked = (savedTheme === 'dark');
+
+if (savedToken && savedRefreshToken) {
+  state.sessionToken = savedToken;
+  state.refreshToken = savedRefreshToken;
+  $('main-app').style.display = 'flex';
+  showScreen('discover');
+  loadDiscoverFeed();
+  initSocket();
+  initGeolocation();
+} else {
+  showStep('welcome');
+}
 
 // =========================================================
 // MAIN APP: Discover, Matches, Chat
@@ -524,18 +645,21 @@ $('btn-go-discover').addEventListener('click', () => {
   $('main-app').style.display = 'flex';
   showScreen('discover');
   loadDiscoverFeed();
+  initGeolocation();
 });
 
 function showScreen(name) {
-  ['discover', 'feelings', 'matches', 'chat', 'composer', 'user-profile'].forEach((s) => { $(`screen-${s}`).style.display = 'none'; });
+  ['discover', 'feelings', 'matches', 'chat', 'composer', 'user-profile', 'settings', 'edit-profile', 'preferences', 'notifications'].forEach((s) => { 
+    const el = $(`screen-${s}`);
+    if (el) el.style.display = 'none'; 
+  });
   $(`screen-${name}`).style.display = 'flex';
   $('nav-discover').classList.toggle('active', name === 'discover');
   $('nav-feelings').classList.toggle('active', name === 'feelings' || name === 'composer' || name === 'user-profile');
   $('nav-matches').classList.toggle('active', name === 'matches' || name === 'chat');
+  $('nav-settings').classList.toggle('active', name === 'settings' || name === 'edit-profile' || name === 'preferences' || name === 'notifications');
+  
   $('btn-open-composer').style.display = name === 'feelings' ? 'flex' : 'none';
-  // Desktop split-view (Matches + Chat side by side) should only ever apply
-  // when we're actually in that section — otherwise its CSS override made
-  // the Matches panel show up underneath Discover/Feelings too.
   $('main-app').classList.toggle('section-matches', name === 'matches' || name === 'chat');
   if (name !== 'chat' && state.chatPollTimer) {
     clearInterval(state.chatPollTimer);
@@ -546,6 +670,7 @@ function showScreen(name) {
 $('nav-discover').addEventListener('click', () => { showScreen('discover'); loadDiscoverFeed(); });
 $('nav-feelings').addEventListener('click', () => { showScreen('feelings'); loadFeelingsFeed(); });
 $('nav-matches').addEventListener('click', () => { showScreen('matches'); loadMatches(); });
+$('nav-settings').addEventListener('click', () => { showScreen('settings'); loadUnreadNotificationsCount(); });
 $('chat-back-btn').addEventListener('click', () => { showScreen('matches'); loadMatches(); });
 
 // ---- Discover / swipe ----
@@ -576,12 +701,13 @@ function renderCardStack() {
     return;
   }
   // Render top 2 for a slight stacked-card feel, top one interactive
-  state.discoverFeed.slice(0, 2).reverse().forEach((person, idx) => {
+  const visiblePeople = state.discoverFeed.slice(0, 2);
+  visiblePeople.reverse().forEach((person, idx) => {
     const card = document.createElement('div');
     card.className = 'swipe-card';
     const age = person.birth_date ? calcAge(person.birth_date) : '';
     card.innerHTML = `
-      <div class="photo">${person.photo_url ? `<img src="${person.photo_url}" style="width:100%;height:100%;object-fit:cover;">` : '🙂'}</div>
+      <div class="photo">${person.photo_url ? `<img src="${person.photo_url}" style="width:100%;height:100%;object-fit:cover;user-select:none;pointer-events:none;">` : '🙂'}</div>
       <div class="info">
         <div class="name-age">${escapeHtml(person.display_name)}${age ? ', ' + age : ''} ${person.is_verified ? '<span class="verified-tick">✓</span>' : ''}</div>
         <div class="location">${escapeHtml(person.city || '')}${person.state ? ', ' + escapeHtml(person.state) : ''}</div>
@@ -590,8 +716,77 @@ function renderCardStack() {
         ${person.interests && person.interests.length ? `<div class="interest-tags">${person.interests.slice(0, 5).map((i) => `<span class="interest-tag">${escapeHtml(i)}</span>`).join('')}</div>` : ''}
       </div>
     `;
+    
+    const isTopCard = (visiblePeople.length === 2 && idx === 1) || (visiblePeople.length === 1 && idx === 0);
+    if (isTopCard) {
+      initCardGestures(card);
+    }
+    
     stack.appendChild(card);
   });
+}
+
+function initCardGestures(card) {
+  let startX = 0;
+  let startY = 0;
+  let offsetX = 0;
+  let offsetY = 0;
+  let isDragging = false;
+  const threshold = 100; // px
+
+  function handleStart(e) {
+    isDragging = true;
+    card.style.transition = 'none';
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    startX = clientX;
+    startY = clientY;
+  }
+
+  function handleMove(e) {
+    if (!isDragging) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    offsetX = clientX - startX;
+    offsetY = clientY - startY;
+
+    const rotation = offsetX / 10;
+    card.style.transform = `translate(${offsetX}px, ${offsetY}px) rotate(${rotation}deg)`;
+  }
+
+  function handleEnd() {
+    if (!isDragging) return;
+    isDragging = false;
+    card.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease';
+
+    if (offsetX > threshold) {
+      // Swipe Right (Like)
+      card.style.opacity = '0';
+      card.style.transform = `translate(${window.innerWidth}px, ${offsetY}px) rotate(45deg)`;
+      setTimeout(() => doSwipe('like', true), 200);
+    } else if (offsetX < -threshold) {
+      // Swipe Left (Dislike)
+      card.style.opacity = '0';
+      card.style.transform = `translate(-${window.innerWidth}px, ${offsetY}px) rotate(-45deg)`;
+      setTimeout(() => doSwipe('dislike', true), 200);
+    } else if (offsetY < -threshold) {
+      // Swipe Up (Superlike)
+      card.style.opacity = '0';
+      card.style.transform = `translate(${offsetX}px, -${window.innerHeight}px) rotate(0deg)`;
+      setTimeout(() => doSwipe('superlike', true), 200);
+    } else {
+      // Reset
+      card.style.transform = 'translate(0px, 0px) rotate(0deg)';
+    }
+  }
+
+  card.addEventListener('mousedown', handleStart);
+  window.addEventListener('mousemove', handleMove);
+  window.addEventListener('mouseup', handleEnd);
+
+  card.addEventListener('touchstart', handleStart, { passive: true });
+  window.addEventListener('touchmove', handleMove, { passive: true });
+  window.addEventListener('touchend', handleEnd);
 }
 
 function escapeHtml(str) {
@@ -600,22 +795,44 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-async function doSwipe(swipeType) {
+async function doSwipe(swipeType, skipAnimation = false) {
   if (state.discoverFeed.length === 0) return;
   const person = state.discoverFeed[0];
   showError('discover-error', '');
-  try {
-    const result = await authFetch('/swipe', {
-      method: 'POST',
-      body: JSON.stringify({ swipee_id: person.id, swipe_type: swipeType }),
-    });
-    state.discoverFeed.shift();
-    renderCardStack();
-    if (result.matched) {
-      showToast(`🎉 It's a match with ${person.display_name}!`, 'success');
+
+  const performSwipe = async () => {
+    try {
+      const result = await authFetch('/swipe', {
+        method: 'POST',
+        body: JSON.stringify({ swipee_id: person.id, swipe_type: swipeType }),
+      });
+      state.discoverFeed.shift();
+      renderCardStack();
+      if (result.matched) {
+        showToast(`🎉 It's a match with ${person.display_name}!`, 'success');
+      }
+    } catch (err) {
+      showError('discover-error', err.message);
     }
-  } catch (err) {
-    showError('discover-error', err.message);
+  };
+
+  if (skipAnimation) {
+    await performSwipe();
+  } else {
+    const stack = $('card-stack');
+    const topCard = stack.lastChild;
+    if (topCard && topCard.classList.contains('swipe-card')) {
+      topCard.style.transition = 'transform 0.4s ease-in-out, opacity 0.4s ease-in-out';
+      topCard.style.opacity = '0';
+      if (swipeType === 'like') {
+        topCard.style.transform = `translate(${window.innerWidth}px, 0px) rotate(30deg)`;
+      } else if (swipeType === 'dislike') {
+        topCard.style.transform = `translate(-${window.innerWidth}px, 0px) rotate(-30deg)`;
+      } else if (swipeType === 'superlike') {
+        topCard.style.transform = `translate(0px, -${window.innerHeight}px) rotate(0deg)`;
+      }
+    }
+    setTimeout(performSwipe, 250);
   }
 }
 
@@ -637,12 +854,14 @@ async function loadMatches() {
     matches.forEach((m) => {
       const row = document.createElement('div');
       row.className = 'match-row';
+      row.dataset.userId = m.other_user_id;
       row.innerHTML = `
         <div class="match-avatar">${m.photo_url ? `<img src="${m.photo_url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : '🙂'}</div>
         <div style="flex:1; min-width:0;">
           <div class="match-name">${escapeHtml(m.display_name)} ${m.is_verified ? '<span class="verified-tick">✓</span>' : ''}</div>
           <div class="match-preview">${m.last_message ? escapeHtml(m.last_message) : 'Say hello 👋'}</div>
         </div>
+        <span class="presence-dot ${m.is_online ? 'online' : 'offline'}"></span>
       `;
       row.addEventListener('click', () => openChat(m.match_id, m.display_name));
       list.appendChild(row);
@@ -657,8 +876,13 @@ function openChat(matchId, name) {
   state.activeMatchId = matchId;
   $('chat-with-name').textContent = name;
   showScreen('chat');
+  if (state.socket && state.socket.connected) {
+    state.socket.emit('join_match', { matchId });
+    state.socket.emit('message_read', { matchId });
+  }
   loadMessages();
-  state.chatPollTimer = setInterval(loadMessages, 3000); // simple polling — good enough until real-time chat is built
+  if (state.chatPollTimer) clearInterval(state.chatPollTimer);
+  state.chatPollTimer = setInterval(loadMessages, 3000);
 }
 
 async function loadMessages() {
@@ -667,8 +891,12 @@ async function loadMessages() {
     const container = $('chat-messages');
     const wasNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 40;
     container.innerHTML = messages.map((m) => {
-      const mine = m.sender_id === getMyUserId();
-      return `<div class="bubble ${mine ? 'mine' : 'theirs'}">${escapeHtml(m.message_text)}</div>`;
+      const mine = Number(m.sender_id) === Number(getMyUserId());
+      const receipt = mine ? `<span class="read-receipt">${m.is_read ? '✓✓' : '✓'}</span>` : '';
+      return `<div class="bubble ${mine ? 'mine' : 'theirs'}">
+        <div style="word-break:break-word;">${escapeHtml(m.message_text)}</div>
+        ${receipt}
+      </div>`;
     }).join('');
     if (wasNearBottom) container.scrollTop = container.scrollHeight;
   } catch (err) {
@@ -687,7 +915,16 @@ function getMyUserId() {
 }
 
 $('chat-send-btn').addEventListener('click', sendChatMessage);
-$('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+$('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendChatMessage();
+  if (state.socket && state.socket.connected && state.activeMatchId) {
+    if (state.typingTimer) clearTimeout(state.typingTimer);
+    state.typingTimer = setTimeout(() => {
+      state.socket.emit('typing', { matchId: state.activeMatchId, isTyping: false });
+    }, 1200);
+    state.socket.emit('typing', { matchId: state.activeMatchId, isTyping: true });
+  }
+});
 
 async function sendChatMessage() {
   const input = $('chat-input');
@@ -695,13 +932,23 @@ async function sendChatMessage() {
   if (!text) return;
   input.value = '';
   try {
-    await authFetch(`/messages/${state.activeMatchId}`, {
-      method: 'POST',
-      body: JSON.stringify({ message_text: text }),
-    });
-    loadMessages();
+    if (state.socket && state.socket.connected && state.activeMatchId) {
+      state.socket.emit('send_message', { matchId: state.activeMatchId, messageText: text }, (response) => {
+        if (response && response.error) {
+          showToast(response.error, 'error');
+        }
+      });
+      state.socket.emit('typing', { matchId: state.activeMatchId, isTyping: false });
+      if (state.typingTimer) clearTimeout(state.typingTimer);
+    } else {
+      await authFetch(`/messages/${state.activeMatchId}`, {
+        method: 'POST',
+        body: JSON.stringify({ message_text: text }),
+      });
+      loadMessages();
+    }
   } catch (err) {
-    showToast(err.message, 'error'); // e.g. content-filter rejection ("please don't share contact info…")
+    showToast(err.message, 'error');
   }
 }
 
@@ -851,3 +1098,384 @@ async function openUserProfile(userId) {
 }
 
 $('user-profile-back-btn').addEventListener('click', () => { showScreen('feelings'); loadFeelingsFeed(); });
+
+// ============================================================
+// SETTINGS, EDIT PROFILE, PREFERENCES & NOTIFICATIONS HANDLERS
+// ============================================================
+
+// Back buttons pointing to Settings
+$('edit-profile-back-btn').addEventListener('click', () => showScreen('settings'));
+$('preferences-back-btn').addEventListener('click', () => showScreen('settings'));
+$('notifications-back-btn').addEventListener('click', () => showScreen('settings'));
+
+// Settings list item triggers
+$('btn-settings-profile').addEventListener('click', () => {
+  showScreen('edit-profile');
+  loadMyProfileForEdit();
+});
+
+$('btn-settings-preferences').addEventListener('click', () => {
+  showScreen('preferences');
+  loadPreferences();
+});
+
+$('btn-settings-notifications').addEventListener('click', () => {
+  showScreen('notifications');
+  loadNotifications();
+});
+
+// Logout trigger
+$('btn-settings-logout').addEventListener('click', async () => {
+  const btn = $('btn-settings-logout');
+  btn.style.opacity = '0.5';
+  try {
+    if (state.refreshToken) {
+      await fetch(`${API_ROOT}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: state.refreshToken })
+      });
+    }
+  } catch (err) {
+    console.error('Error logging out from server:', err);
+  }
+  handleForceLogout();
+  btn.style.opacity = '1';
+});
+
+// Delete account trigger
+$('btn-settings-delete').addEventListener('click', async () => {
+  if (confirm('Are you absolutely sure you want to delete your account? This action is permanent and deletes all matches, messages, photos, and settings under GDPR right to erasure.')) {
+    try {
+      await authFetch('/profile', { method: 'DELETE' });
+      showToast('Account successfully deleted.', 'success');
+      handleForceLogout();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+});
+
+// Theme switcher
+const themeToggleChk = $('theme-toggle-chk');
+if (themeToggleChk) {
+  themeToggleChk.addEventListener('change', () => {
+    const isDark = themeToggleChk.checked;
+    const newTheme = isDark ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    showToast(`${isDark ? 'Dark' : 'Light'} mode enabled.`, 'success');
+  });
+}
+
+// Edit Profile logic
+let editProfilePhotos = [];
+
+async function loadMyProfileForEdit() {
+  showError('edit-profile-error', '');
+  try {
+    const profile = await authFetch('/profile');
+    
+    $('edit-name-input').value = profile.display_name || '';
+    $('edit-bio-input').value = profile.bio || '';
+    $('edit-profession-input').value = profile.profession || '';
+    $('edit-dob-input').value = profile.birth_date ? profile.birth_date.split('T')[0] : '';
+    
+    document.querySelectorAll('#edit-gender-group .chip').forEach(chip => {
+      chip.classList.toggle('selected', chip.dataset.gender === profile.gender);
+    });
+    
+    document.querySelectorAll('#edit-interest-group .chip').forEach(chip => {
+      const interests = profile.interested_in || [];
+      chip.classList.toggle('selected', interests.includes(chip.dataset.interest));
+    });
+
+    editProfilePhotos = profile.photos || [];
+    renderEditProfilePhotos();
+  } catch (err) {
+    showError('edit-profile-error', err.message);
+  }
+}
+
+function renderEditProfilePhotos() {
+  const grid = $('edit-profile-photo-grid');
+  grid.innerHTML = '';
+  
+  editProfilePhotos.forEach(photo => {
+    const item = document.createElement('div');
+    item.className = 'photo-item';
+    item.innerHTML = `
+      <img src="${photo.media_url}" alt="Profile photo" />
+      <button class="btn-delete-photo" data-id="${photo.id}">✕</button>
+    `;
+    
+    item.querySelector('.btn-delete-photo').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const photoId = e.target.dataset.id;
+      if (confirm('Delete this photo?')) {
+        try {
+          await authFetch(`/profile/photos/${photoId}`, { method: 'DELETE' });
+          editProfilePhotos = editProfilePhotos.filter(p => Number(p.id) !== Number(photoId));
+          renderEditProfilePhotos();
+          showToast('Photo deleted successfully.', 'success');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      }
+    });
+
+    grid.appendChild(item);
+  });
+}
+
+$('edit-profile-photo-upload').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  if (editProfilePhotos.length >= 6) {
+    showToast('You can upload a maximum of 6 photos.', 'error');
+    return;
+  }
+
+  showToast('Uploading photo...', 'success');
+  
+  const formData = new FormData();
+  formData.append('photo', file);
+
+  try {
+    const result = await authFetch('/profile/photos', {
+      method: 'POST',
+      body: formData
+    });
+    
+    editProfilePhotos.push(result.photo);
+    renderEditProfilePhotos();
+    showToast('Photo uploaded successfully.', 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    $('edit-profile-photo-upload').value = '';
+  }
+});
+
+$('btn-save-profile').addEventListener('click', async () => {
+  showError('edit-profile-error', '');
+  
+  const name = $('edit-name-input').value.trim();
+  const bio = $('edit-bio-input').value.trim();
+  const profession = $('edit-profession-input').value.trim();
+  const dob = $('edit-dob-input').value;
+  
+  const selectedGenderChip = document.querySelector('#edit-gender-group .chip.selected');
+  const gender = selectedGenderChip ? selectedGenderChip.dataset.gender : null;
+  
+  const selectedInterestChips = document.querySelectorAll('#edit-interest-group .chip.selected');
+  const interested_in = Array.from(selectedInterestChips).map(chip => chip.dataset.interest);
+
+  if (!name || !dob || !gender || interested_in.length === 0) {
+    showError('edit-profile-error', 'Name, DOB, gender, and at least one gender preference are required.');
+    return;
+  }
+
+  const btn = $('btn-save-profile');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    await authFetch('/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name,
+        bio,
+        profession,
+        dob,
+        gender,
+        interested_in
+      })
+    });
+    showToast('Profile saved successfully.', 'success');
+    showScreen('settings');
+  } catch (err) {
+    showError('edit-profile-error', err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+  }
+});
+
+document.querySelectorAll('#edit-gender-group .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#edit-gender-group .chip').forEach(c => c.classList.remove('selected'));
+    chip.classList.add('selected');
+  });
+});
+
+document.querySelectorAll('#edit-interest-group .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    chip.classList.toggle('selected');
+  });
+});
+
+// Preferences logic
+function loadPreferences() {
+  const ageMin = localStorage.getItem('pref_age_min') || '18';
+  const ageMax = localStorage.getItem('pref_age_max') || '50';
+  const dist = localStorage.getItem('pref_dist') || '50';
+
+  $('pref-age-min').value = ageMin;
+  $('pref-age-max').value = ageMax;
+  $('pref-dist').value = dist;
+  
+  $('pref-age-val').textContent = `${ageMin} - ${ageMax}`;
+  $('pref-dist-val').textContent = `${dist} km`;
+}
+
+$('pref-age-min').addEventListener('input', (e) => {
+  const minVal = parseInt(e.target.value, 10);
+  const maxVal = parseInt($('pref-age-max').value, 10);
+  if (minVal > maxVal) {
+    $('pref-age-max').value = minVal;
+  }
+  $('pref-age-val').textContent = `${$('pref-age-min').value} - ${$('pref-age-max').value}`;
+});
+
+$('pref-age-max').addEventListener('input', (e) => {
+  const maxVal = parseInt(e.target.value, 10);
+  const minVal = parseInt($('pref-age-min').value, 10);
+  if (maxVal < minVal) {
+    $('pref-age-min').value = maxVal;
+  }
+  $('pref-age-val').textContent = `${$('pref-age-min').value} - ${$('pref-age-max').value}`;
+});
+
+$('pref-dist').addEventListener('input', (e) => {
+  $('pref-dist-val').textContent = `${e.target.value} km`;
+});
+
+$('btn-save-preferences').addEventListener('click', () => {
+  const ageMin = $('pref-age-min').value;
+  const ageMax = $('pref-age-max').value;
+  const dist = $('pref-dist').value;
+
+  localStorage.setItem('pref_age_min', ageMin);
+  localStorage.setItem('pref_age_max', ageMax);
+  localStorage.setItem('pref_dist', dist);
+  
+  showToast('Preferences saved successfully.', 'success');
+  showScreen('settings');
+});
+
+// Socket & Notifications stubs (real implementations in next phases)
+if (typeof state.socket === 'undefined') state.socket = null;
+
+function initSocket() {
+  if (!state.sessionToken || state.socket) return;
+  try {
+    const socket = window.io(API_ROOT.replace(/\/api$/, ''), {
+      auth: { token: state.sessionToken },
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+      console.log('Socket connected');
+      if (state.activeMatchId) {
+        socket.emit('join_match', { matchId: state.activeMatchId });
+      }
+    });
+
+    socket.on('connect_error', () => {
+      console.warn('Socket connection failed, retrying…');
+    });
+
+    socket.on('new_message', (message) => {
+      if (state.activeMatchId && Number(message.match_id) === Number(state.activeMatchId)) {
+        loadMessages();
+        socket.emit('message_read', { matchId: state.activeMatchId });
+      }
+      loadMatches();
+      loadUnreadNotificationsCount();
+    });
+
+    socket.on('messages_read', ({ matchId }) => {
+      if (state.activeMatchId && Number(matchId) === Number(state.activeMatchId)) {
+        loadMessages();
+      }
+    });
+
+    socket.on('typing', ({ matchId, userId: typingUserId, isTyping }) => {
+      if (Number(matchId) === Number(state.activeMatchId) && Number(typingUserId) !== Number(getMyUserId())) {
+        const indicator = $('typing-indicator');
+        indicator.style.display = isTyping ? 'block' : 'none';
+      }
+    });
+
+    socket.on('new_notification', () => {
+      loadUnreadNotificationsCount();
+    });
+
+    socket.on('user_status', ({ userId, status }) => {
+      const item = Array.from(document.querySelectorAll('.match-row')).find((el) => el.dataset.userId === String(userId));
+      if (item) {
+        const dot = item.querySelector('.presence-dot');
+        if (dot) dot.className = `presence-dot ${status}`;
+      }
+    });
+
+    state.socket = socket;
+  } catch (err) {
+    console.error('Socket initialization failed:', err);
+  }
+}
+
+function loadUnreadNotificationsCount() {
+  if (!state.sessionToken) return;
+  authFetch('/notifications/unread-count')
+    .then(data => {
+      const badge = $('settings-notif-badge');
+      if (data.unread_count > 0) {
+        badge.textContent = data.unread_count;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    })
+    .catch(err => console.warn('Unread count failed:', err));
+}
+
+async function loadNotifications() {
+  const list = $('notifications-list');
+  list.innerHTML = '<div class="center-text">Loading notifications…</div>';
+  try {
+    const notifs = await authFetch('/notifications');
+    list.innerHTML = '';
+    if (notifs.length === 0) {
+      list.innerHTML = '<div class="center-text" style="color:var(--text-muted); padding: 40px 0;">No notifications yet.</div>';
+      return;
+    }
+    
+    notifs.forEach(n => {
+      const card = document.createElement('div');
+      card.className = 'notification-card' + (n.is_read ? '' : ' unread');
+      
+      let text = 'You received a notification.';
+      if (n.type === 'new_match') {
+        text = `🎉 <strong>It's a Match!</strong> You matched with ${escapeHtml(n.data.partnerName)}.`;
+      } else if (n.type === 'new_message') {
+        text = `💬 <strong>New message</strong> from ${escapeHtml(n.data.partnerName || 'a match')}: "${escapeHtml(n.data.text)}"`;
+      }
+      
+      const time = new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      card.innerHTML = `
+        <div class="notif-text">${text}</div>
+        <div class="notif-time">${time}</div>
+      `;
+      list.appendChild(card);
+    });
+
+    // Mark as read after rendering
+    await authFetch('/notifications/read', { method: 'PUT' });
+    loadUnreadNotificationsCount();
+  } catch (err) {
+    list.innerHTML = `<div class="error-banner">${err.message}</div>`;
+  }
+}
