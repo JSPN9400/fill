@@ -507,6 +507,10 @@ function showScreen(name) {
   $('nav-feelings').classList.toggle('active', name === 'feelings' || name === 'composer' || name === 'user-profile');
   $('nav-matches').classList.toggle('active', name === 'matches' || name === 'chat');
   $('btn-open-composer').style.display = name === 'feelings' ? 'flex' : 'none';
+  // Desktop split-view (Matches + Chat side by side) should only ever apply
+  // when we're actually in that section — otherwise its CSS override made
+  // the Matches panel show up underneath Discover/Feelings too.
+  $('main-app').classList.toggle('section-matches', name === 'matches' || name === 'chat');
   if (name !== 'chat' && state.chatPollTimer) {
     clearInterval(state.chatPollTimer);
     state.chatPollTimer = null;

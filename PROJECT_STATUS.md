@@ -4,46 +4,39 @@ _Upload this file at the start of your next chat with Claude to continue exactly
 ## Locked decisions
 - **Backend**: Node.js + Express, on **Render** → `https://fillings-backend.onrender.com`
 - **Frontend**: Plain HTML/CSS/JS, on **GitHub Pages** → `https://jspn9400.github.io/fill/`
-- **Database**: PostgreSQL on **Supabase**, pooler region is **ap-northeast-1**
+- **Database**: PostgreSQL on **Supabase**, pooler region **ap-northeast-1**
 - **Repo**: `github.com/JSPN9400/fill`
 - **MOCK_MODE=true** everywhere
-- **App name: FILLINGS**
-
-## About the friend's "aura" project (uploaded this session)
-It's a **Google AI Studio–generated UI/UX prototype** — React+TS+Vite+Firebase+Drizzle,
-but almost entirely **hardcoded mock data** (fake profiles "Elena"/"Julian", placeholder
-Firebase/Drizzle scaffolding with no real business logic wired up). Not usable as a
-working backend to "continue" — it's a design reference. We are NOT switching stacks
-to it; we extracted the good ideas and merged them into our existing tested FILLINGS app:
-- **Adopted**: client-side image compression before storing photos as base64 (resize to
-  800px + JPEG 70% quality) — this was a real gap we'd flagged (unbounded base64 photo size)
-- **Adopted**: a `profession` profile field
-- **Noted for later, not built yet**: "Aura Gold" (premium tier naming/branding idea),
-  "Creator Monetization" (a bigger feature — users monetizing content/subscriptions —
-  out of scope for now), Stories-style "active" ring indicator on Feelings avatars
+- **App name: FILLINGS**, design palette inspired by "Aura" reference (rose/berry gradient, Montserrat headings, glow shadows)
 
 ## LIVE AND WORKING
-- Signup, login, discover/swipe/match/chat, Feelings feed, interest-based match ranking
+- Signup, login, discover/swipe/match/chat, Feelings feed, interest-based ranking, photo upload, profession field
 
-## NEW this session
-1. Image compression (`compressImage()` in app.js) applied to both profile-photo upload and Feelings photo upload — shrinks images before they're sent/stored
-2. `profession` field — new DB column, profile-setup input, shown on discover cards and public profile view
+## Bugs found and fixed this session
+1. **Desktop split-view CSS bug** — the Matches+Chat side-by-side panel was forced visible via `!important` on ALL screens ≥1000px width, so it showed underneath Discover too. Fixed by scoping it to a `.section-matches` class that JS only adds when actually viewing Matches/Chat.
+2. **Root cause of the "have to zoom in/out, feed doesn't scroll properly" complaint**: the whole page was scrolling as one unit instead of each screen's content scrolling independently while the bottom nav stayed fixed. Restructured to a proper mobile-app shell:
+   - `.app-frame` is now a fixed `100dvh` (dynamic viewport height) container with `overflow:hidden`
+   - `.content` (each screen) is the actual scrolling element (`overflow-y:auto`, `min-height:0`)
+   - Bottom nav / top bar / progress bar no longer move — only the feed/form content scrolls beneath them
+   - Added safe-area padding (`env(safe-area-inset-*)`) for notch/dynamic-island phones
+   - Added `touch-action: manipulation` to remove the double-tap-zoom delay on buttons
 
-## Still pending from last session (not yet confirmed live-tested)
-- [ ] Run in Supabase: `dating-app-backend/src/db/interests_column.sql` (now also adds `profession` column — this file was appended to, run the WHOLE file even if you ran an earlier version before)
-- [ ] Push + test photo upload, interests, and now profession live
+## UI redesign (researched current dating-app UX practices: Tinder/Bumble/Hinge minimalism, pill buttons, segmented progress — confirmed our direction, found concrete gaps)
+- Adopted an "Aura"-inspired rose/berry palette instead of the Instagram gradient
+- Montserrat for headings (more premium feel), slightly larger heading/subtitle sizes for readability without zooming
+- Glow shadows on primary buttons and the like/FAB buttons
 
 ## NOT yet done / next steps
-- [ ] Real photo hosting (Cloudinary) instead of base64-in-database — compression helps but doesn't fully solve this
+- [ ] Push + test the scrolling fix live — this was the main complaint, confirm it's actually resolved on a real phone
+- [ ] Real photo hosting (Cloudinary) instead of base64-in-database
 - [ ] Real-time chat (currently 3-second polling)
-- [ ] Daily swipe/message limits per tier (DB columns exist, not enforced)
+- [ ] Daily swipe/message limits per tier
 - [ ] Razorpay integration, admin panel, report/block
-- [ ] Consider: "Aura Gold" style premium branding, Stories active-ring UI polish (low priority, cosmetic)
+- [ ] User still needs to run `SELECT id, display_name, gender, interested_in FROM users ORDER BY id;` in Supabase to confirm their 4 test accounts actually have opposite gender/preference combos (matches won't appear otherwise — this is filtering logic, not a bug)
 
-## Files changed/added this session
-- CHANGED: `dating-app-backend/src/db/interests_column.sql` (now also has profession column)
-- CHANGED: `dating-app-backend/src/controllers/authController.js`, `discoveryController.js`, `publicProfileController.js` (profession field)
-- CHANGED: `dating-app-static/index.html`, `app.js`, `style.css` (image compression, profession field + display)
+## Files changed this session
+- `dating-app-static/style.css` (scroll/viewport structural fix, Aura-inspired palette)
+- `dating-app-static/index.html` (Montserrat font link)
 
 ## How to avoid hallucination / wasted tokens across sessions
 1. At the end of each build session, ask Claude to update this file with what changed.
