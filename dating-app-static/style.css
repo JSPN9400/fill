@@ -675,3 +675,134 @@ p.step-subtitle {
     font-size: 15px;
   }
 }
+
+/* ============================================================
+   FILLINGS brand — unique wordmark treatment
+============================================================ */
+.brand {
+  letter-spacing: -1px;
+  background-size: 200% auto;
+  animation: brandShimmer 6s ease infinite;
+}
+
+@keyframes brandShimmer {
+  0% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+  100% { background-position: 0% center; }
+}
+
+/* ============================================================
+   FEELINGS — Snapchat/Stories-style photo + caption sharing
+============================================================ */
+.feelings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding-bottom: 90px; /* room for FAB + bottom nav */
+}
+
+.feeling-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.feeling-card .feeling-photo {
+  width: 100%;
+  aspect-ratio: 3/4;
+  background: linear-gradient(135deg, #f5f5f5, #e8e8e8);
+  object-fit: cover;
+  display: block;
+}
+
+.feeling-card .feeling-photo.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+}
+
+.feeling-card .feeling-body {
+  padding: 10px;
+}
+
+.feeling-card .feeling-author {
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+
+.feeling-card .feeling-text {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fab {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--gradient);
+  color: white;
+  font-size: 28px;
+  line-height: 1;
+  box-shadow: 0 8px 20px rgba(253,29,29,0.35);
+  cursor: pointer;
+  display: none; /* shown only on the Feelings screen via JS */
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.fab:active { transform: scale(0.94); }
+
+/* ---- Public profile view ---- */
+.profile-view-photo {
+  width: 100%;
+  aspect-ratio: 3/4;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #f5f5f5, #e8e8e8);
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 60px;
+  color: #bbb;
+  margin-bottom: 14px;
+}
+
+/* ============================================================
+   Desktop: feelings grid gets more columns + FAB sits inside frame
+============================================================ */
+@media (min-width: 1000px) {
+  .feelings-grid { grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .fab { right: calc(50vw - 490px + 20px); }
+}
+
+.interest-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.interest-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f5f0fa;
+  color: #833ab4;
+}
+
+.profession { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }

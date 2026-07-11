@@ -1,43 +1,49 @@
-# Milan Dating App — Project Status
+# FILLINGS — Project Status
 _Upload this file at the start of your next chat with Claude to continue exactly from here._
 
 ## Locked decisions
-- **Backend**: Node.js + Express, on **Render** → `https://feelings-dating-app.onrender.com`
+- **Backend**: Node.js + Express, on **Render** → `https://fillings-backend.onrender.com`
 - **Frontend**: Plain HTML/CSS/JS, on **GitHub Pages** → `https://jspn9400.github.io/fill/`
-- **Database**: PostgreSQL on **Supabase** (pooler connection string, not direct)
+- **Database**: PostgreSQL on **Supabase**, pooler region is **ap-northeast-1**
 - **Repo**: `github.com/JSPN9400/fill`
-- **MOCK_MODE=true** everywhere (OTP=123456, Google/face/KYC auto-pass)
-- App name: **Milan**
+- **MOCK_MODE=true** everywhere
+- **App name: FILLINGS**
+
+## About the friend's "aura" project (uploaded this session)
+It's a **Google AI Studio–generated UI/UX prototype** — React+TS+Vite+Firebase+Drizzle,
+but almost entirely **hardcoded mock data** (fake profiles "Elena"/"Julian", placeholder
+Firebase/Drizzle scaffolding with no real business logic wired up). Not usable as a
+working backend to "continue" — it's a design reference. We are NOT switching stacks
+to it; we extracted the good ideas and merged them into our existing tested FILLINGS app:
+- **Adopted**: client-side image compression before storing photos as base64 (resize to
+  800px + JPEG 70% quality) — this was a real gap we'd flagged (unbounded base64 photo size)
+- **Adopted**: a `profession` profile field
+- **Noted for later, not built yet**: "Aura Gold" (premium tier naming/branding idea),
+  "Creator Monetization" (a bigger feature — users monetizing content/subscriptions —
+  out of scope for now), Stories-style "active" ring indicator on Feelings avatars
 
 ## LIVE AND WORKING
-- Full signup flow (phone → OTP → Gmail → face scan camera → ID → profile)
-- Login for existing users (Gmail lookup, no re-verification)
-- Discover / swipe / match / chat — built and code-reviewed this session, **user needs to push + test live**
+- Signup, login, discover/swipe/match/chat, Feelings feed, interest-based match ranking
 
-## Bugs found and fixed this session
-1. **Real, confirmed bug — this was "click not working for find match"**: `discoveryController.js` compared a plain-text parameter against a `gender_enum[]` column without casting (`$3 = ANY(u.interested_in)`), which Postgres rejects with a type error, making `/api/discover` fail silently → fixed to `$3::gender_enum = ANY(...)`.
-2. Face-scan step restarted the camera every time the user navigated back to it, discarding an already-captured photo → now shows the existing preview instead if one exists.
-3. Replaced all `alert()` popups (match celebration, chat content-filter errors) with proper in-app toast notifications — feels native instead of a browser popup.
-4. (Earlier sessions) Express async-error crash, JWT re-signing crash, Render trust-proxy warning, MOCK_MODE env var mismatch on Render — all previously fixed, still in place.
+## NEW this session
+1. Image compression (`compressImage()` in app.js) applied to both profile-photo upload and Feelings photo upload — shrinks images before they're sent/stored
+2. `profession` field — new DB column, profile-setup input, shown on discover cards and public profile view
 
-## UI/UX overhaul this session
-- Fully responsive: phone (single column, 16px inputs to stop iOS auto-zoom, bigger touch targets), tablet (centered card with shadow), desktop (wide layout, Messenger-style side-by-side Matches + Chat panel, top tab bar instead of bottom nav)
-- Toast notification system (bottom-center, auto-dismiss, success/error variants)
-- Phone number field: auto-prefixed `+91`, live valid/invalid inline hint, can't accidentally delete the prefix
-- Subtle motion/elevation on buttons, chips, match rows (Google/Meta-style quiet interactions, not flashy)
-- Login page cleaned up with clear copy and MOCK_MODE hint
+## Still pending from last session (not yet confirmed live-tested)
+- [ ] Run in Supabase: `dating-app-backend/src/db/interests_column.sql` (now also adds `profession` column — this file was appended to, run the WHOLE file even if you ran an earlier version before)
+- [ ] Push + test photo upload, interests, and now profession live
 
 ## NOT yet done / next steps
-- [ ] User needs to copy updated files into their local repo, `git push`, and test discover/swipe/match/chat live on the real deployment
-- [ ] Real-time chat (currently 3-second polling, not Socket.io)
-- [ ] Photo upload (profiles currently show a 🙂 placeholder — no way to add real `user_media` rows yet)
-- [ ] Daily swipe/message limits per tier (DB columns exist, not enforced in code)
-- [ ] Razorpay integration, admin panel, report/block safety features
-- [ ] Desktop `:has()` CSS selector used for split-chat layout — works in modern Chrome/Edge/Safari; if the user needs older-browser support this may need a JS fallback later (not urgent)
+- [ ] Real photo hosting (Cloudinary) instead of base64-in-database — compression helps but doesn't fully solve this
+- [ ] Real-time chat (currently 3-second polling)
+- [ ] Daily swipe/message limits per tier (DB columns exist, not enforced)
+- [ ] Razorpay integration, admin panel, report/block
+- [ ] Consider: "Aura Gold" style premium branding, Stories active-ring UI polish (low priority, cosmetic)
 
-## Files changed this session (copy these into the local project)
-- `dating-app-backend/src/controllers/discoveryController.js` (bug fix)
-- `dating-app-static/index.html`, `app.js`, `style.css` (bug fixes + full responsive/UX redesign)
+## Files changed/added this session
+- CHANGED: `dating-app-backend/src/db/interests_column.sql` (now also has profession column)
+- CHANGED: `dating-app-backend/src/controllers/authController.js`, `discoveryController.js`, `publicProfileController.js` (profession field)
+- CHANGED: `dating-app-static/index.html`, `app.js`, `style.css` (image compression, profession field + display)
 
 ## How to avoid hallucination / wasted tokens across sessions
 1. At the end of each build session, ask Claude to update this file with what changed.

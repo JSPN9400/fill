@@ -4,6 +4,7 @@ const authRoutes = require('./routes/authRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const discoveryRoutes = require('./routes/discoveryRoutes');
+const feelingsRoutes = require('./routes/feelingsRoutes');
 
 const app = express();
 
@@ -13,12 +14,15 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+// Bumped from 2mb — Feelings photos are sent as base64 (roughly 33% bigger
+// than the raw file), so this needs headroom for a compressed photo upload.
+app.use(express.json({ limit: '8mb' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api', discoveryRoutes);
+app.use('/api', feelingsRoutes);
 
 // Central error handler - keeps error messages generic to the client (avoid leaking internals)
 app.use((err, req, res, next) => {

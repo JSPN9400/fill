@@ -1,5 +1,5 @@
 // ===== CONFIG: change this to your Render backend URL once deployed =====
-const API_BASE_URL = 'https://feelings-dating-app.onrender.com/api/auth';
+const API_BASE_URL = 'https://fillings-backend.onrender.com/api/auth';
 const API_ROOT = API_BASE_URL.replace(/\/auth$/, ''); // for /discover, /swipe, /matches, /messages, /profile
 const MOCK_MODE = true; // matches backend .env MOCK_MODE — flip both together
 
@@ -13,6 +13,7 @@ const state = {
   selectedIdType: 'Aadhaar',
   selectedGender: '',
   selectedInterests: [],
+  selectedInterestTags: [],
   discoverFeed: [],
   activeMatchId: null,
   chatPollTimer: null,
@@ -30,6 +31,39 @@ const STEP_LABELS = {
 const STEP_PROGRESS = { phone: 0, otp: 1, google: 1, face: 2, id: 3, profile: 4, success: 5 };
 
 function $(id) { return document.getElementById(id); }
+
+/**
+ * Resizes + compresses an image before we store it as base64. Without this,
+ * a phone camera photo can be several MB — way too big to store directly in
+ * the database. Caps the longest side at 800px and re-encodes as JPEG at
+ * 70% quality, which keeps photos recognizable but small.
+ */
+function compressImage(base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7) {
+  return new Promise((resolve) => {
+    if (!base64Str || !base64Str.startsWith('data:image/')) {
+      resolve(base64Str);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height) {
+        if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
+      } else {
+        if (height > maxHeight) { width = Math.round((width * maxHeight) / height); height = maxHeight; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(base64Str); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(base64Str);
+    img.src = base64Str;
+  });
+}
 
 function showStep(name) {
   STEPS.forEach((s) => { $(`step-${s}`).style.display = 'none'; });
@@ -387,6 +421,32 @@ document.querySelectorAll('#interest-chips .chip').forEach((chip) => {
   });
 });
 
+document.querySelectorAll('#interest-tags-chips .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    const v = chip.dataset.value;
+    if (state.selectedInterestTags.includes(v)) {
+      state.selectedInterestTags = state.selectedInterestTags.filter((x) => x !== v);
+      chip.classList.remove('selected');
+    } else {
+      state.selectedInterestTags.push(v);
+      chip.classList.add('selected');
+    }
+  });
+});
+
+let profilePhotoDataUrl = null;
+$('p-photo-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    profilePhotoDataUrl = await compressImage(reader.result);
+    $('p-photo-preview').src = profilePhotoDataUrl;
+    $('p-photo-preview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
 ['p-name', 'p-dob', 'p-state', 'p-city'].forEach((id) => $(id).addEventListener('input', validateProfileForm));
 
 function validateProfileForm() {
@@ -411,6 +471,9 @@ $('btn-finish').addEventListener('click', async () => {
       state: $('p-state').value.trim(),
       city: $('p-city').value.trim(),
       area: $('p-area').value.trim(),
+      interests: state.selectedInterestTags,
+      photo_base64: profilePhotoDataUrl,
+      profession: $('p-profession').value.trim(),
     });
     $('success-message').textContent = `Your account has been created and verified. (user id: ${result.user_id}) Time to find real matches nearby.`;
     state.sessionToken = result.session_token;
@@ -438,10 +501,12 @@ $('btn-go-discover').addEventListener('click', () => {
 });
 
 function showScreen(name) {
-  ['discover', 'matches', 'chat'].forEach((s) => { $(`screen-${s}`).style.display = 'none'; });
+  ['discover', 'feelings', 'matches', 'chat', 'composer', 'user-profile'].forEach((s) => { $(`screen-${s}`).style.display = 'none'; });
   $(`screen-${name}`).style.display = 'flex';
   $('nav-discover').classList.toggle('active', name === 'discover');
+  $('nav-feelings').classList.toggle('active', name === 'feelings' || name === 'composer' || name === 'user-profile');
   $('nav-matches').classList.toggle('active', name === 'matches' || name === 'chat');
+  $('btn-open-composer').style.display = name === 'feelings' ? 'flex' : 'none';
   if (name !== 'chat' && state.chatPollTimer) {
     clearInterval(state.chatPollTimer);
     state.chatPollTimer = null;
@@ -449,6 +514,7 @@ function showScreen(name) {
 }
 
 $('nav-discover').addEventListener('click', () => { showScreen('discover'); loadDiscoverFeed(); });
+$('nav-feelings').addEventListener('click', () => { showScreen('feelings'); loadFeelingsFeed(); });
 $('nav-matches').addEventListener('click', () => { showScreen('matches'); loadMatches(); });
 $('chat-back-btn').addEventListener('click', () => { showScreen('matches'); loadMatches(); });
 
@@ -489,7 +555,9 @@ function renderCardStack() {
       <div class="info">
         <div class="name-age">${escapeHtml(person.display_name)}${age ? ', ' + age : ''} ${person.is_verified ? '<span class="verified-tick">✓</span>' : ''}</div>
         <div class="location">${escapeHtml(person.city || '')}${person.state ? ', ' + escapeHtml(person.state) : ''}</div>
+        ${person.profession ? `<div class="profession">💼 ${escapeHtml(person.profession)}</div>` : ''}
         ${person.bio ? `<div class="bio">${escapeHtml(person.bio)}</div>` : ''}
+        ${person.interests && person.interests.length ? `<div class="interest-tags">${person.interests.slice(0, 5).map((i) => `<span class="interest-tag">${escapeHtml(i)}</span>`).join('')}</div>` : ''}
       </div>
     `;
     stack.appendChild(card);
@@ -606,3 +674,150 @@ async function sendChatMessage() {
     showToast(err.message, 'error'); // e.g. content-filter rejection ("please don't share contact info…")
   }
 }
+
+// =========================================================
+// FEELINGS — share a photo + caption, tap to visit a profile
+// =========================================================
+
+$('btn-open-composer').addEventListener('click', () => {
+  showError('composer-error', '');
+  goToScreenKeepingNav('composer');
+});
+$('composer-back-btn').addEventListener('click', () => { showScreen('feelings'); loadFeelingsFeed(); });
+
+function goToScreenKeepingNav(name) {
+  // Like showScreen, but used for screens reached *from* Feelings (composer, profile)
+  // so the bottom-nav still highlights "Feelings" correctly.
+  ['discover', 'feelings', 'matches', 'chat', 'composer', 'user-profile'].forEach((s) => { $(`screen-${s}`).style.display = 'none'; });
+  $(`screen-${name}`).style.display = 'flex';
+  $('btn-open-composer').style.display = 'none';
+}
+
+let composerPhotoDataUrl = null;
+
+$('composer-photo-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    composerPhotoDataUrl = await compressImage(reader.result);
+    $('composer-photo-preview').src = composerPhotoDataUrl;
+    $('composer-photo-preview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
+$('composer-text-input').addEventListener('input', () => {
+  $('btn-post-feeling').disabled = $('composer-text-input').value.trim().length === 0;
+});
+
+$('btn-post-feeling').addEventListener('click', async () => {
+  showError('composer-error', '');
+  const btn = $('btn-post-feeling');
+  btn.disabled = true;
+  btn.textContent = 'Sharing…';
+  try {
+    await authFetch('/feelings', {
+      method: 'POST',
+      body: JSON.stringify({ feeling_text: $('composer-text-input').value.trim(), photo_url: composerPhotoDataUrl }),
+    });
+    $('composer-text-input').value = '';
+    $('composer-photo-preview').style.display = 'none';
+    $('composer-photo-input').value = '';
+    composerPhotoDataUrl = null;
+    showToast('Your feeling is live ✨', 'success');
+    showScreen('feelings');
+    loadFeelingsFeed();
+  } catch (err) {
+    showError('composer-error', err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Share';
+  }
+});
+
+async function loadFeelingsFeed() {
+  showError('feelings-error', '');
+  const feed = $('feelings-feed');
+  feed.innerHTML = '<div class="empty-state">Loading feelings…</div>';
+  try {
+    const feelings = await authFetch('/feelings?limit=30');
+    if (feelings.length === 0) {
+      feed.innerHTML = '<div class="empty-state">No feelings shared yet — be the first! Tap the + button.</div>';
+      return;
+    }
+    feed.innerHTML = '';
+    feelings.forEach((f) => {
+      const card = document.createElement('div');
+      card.className = 'feeling-card';
+      card.innerHTML = `
+        ${f.photo_url
+          ? `<img class="feeling-photo" src="${f.photo_url}" alt="">`
+          : `<div class="feeling-photo placeholder">✨</div>`}
+        <div class="feeling-body">
+          <div class="feeling-author">${escapeHtml(f.display_name)} ${f.is_verified ? '<span class="verified-tick">✓</span>' : ''}</div>
+          <div class="feeling-text">${escapeHtml(f.feeling_text)}</div>
+        </div>
+      `;
+      card.addEventListener('click', () => openUserProfile(f.user_id));
+      feed.appendChild(card);
+    });
+  } catch (err) {
+    showError('feelings-error', err.message);
+    feed.innerHTML = '';
+  }
+}
+
+// ---- Public profile view (tap into someone from the Feelings feed) ----
+async function openUserProfile(userId) {
+  showError('user-profile-error', '');
+  goToScreenKeepingNav('user-profile');
+  $('btn-profile-like').style.display = 'none';
+  $('btn-profile-message').style.display = 'none';
+  const body = $('user-profile-body');
+  body.innerHTML = '<div class="empty-state">Loading profile…</div>';
+  try {
+    const p = await authFetch(`/users/${userId}`);
+    const age = p.birth_date ? calcAge(p.birth_date) : '';
+    body.innerHTML = `
+      <div class="profile-view-photo">${p.photo_url ? `<img src="${p.photo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">` : '🙂'}</div>
+      <div class="name-age" style="font-family:var(--font-display); font-weight:700; font-size:20px; display:flex; align-items:center; gap:6px;">
+        ${escapeHtml(p.display_name)}${age ? ', ' + age : ''} ${p.is_verified ? '<span class="verified-tick">✓</span>' : ''}
+      </div>
+      <div class="location" style="color:var(--text-muted); font-size:13px; margin-top:2px;">${escapeHtml(p.city || '')}${p.state ? ', ' + escapeHtml(p.state) : ''}</div>
+      ${p.profession ? `<div class="profession">💼 ${escapeHtml(p.profession)}</div>` : ''}
+      ${p.bio ? `<div class="bio" style="margin-top:10px; font-size:14px; line-height:1.5;">${escapeHtml(p.bio)}</div>` : ''}
+    `;
+
+    if (p.match_id) {
+      $('btn-profile-message').style.display = 'block';
+      $('btn-profile-message').onclick = () => {
+        showScreen('matches');
+        openChat(p.match_id, p.display_name);
+      };
+    } else if (!p.already_swiped) {
+      $('btn-profile-like').style.display = 'block';
+      $('btn-profile-like').onclick = async () => {
+        try {
+          const result = await authFetch('/swipe', {
+            method: 'POST',
+            body: JSON.stringify({ swipee_id: userId, swipe_type: 'like' }),
+          });
+          showToast(result.matched ? `🎉 It's a match with ${p.display_name}!` : 'Liked!', 'success');
+          $('btn-profile-like').style.display = 'none';
+          if (result.matched) {
+            $('btn-profile-message').style.display = 'block';
+            $('btn-profile-message').onclick = () => { showScreen('matches'); openChat(result.match_id, p.display_name); };
+          }
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      };
+    }
+  } catch (err) {
+    showError('user-profile-error', err.message);
+    body.innerHTML = '';
+  }
+}
+
+$('user-profile-back-btn').addEventListener('click', () => { showScreen('feelings'); loadFeelingsFeed(); });

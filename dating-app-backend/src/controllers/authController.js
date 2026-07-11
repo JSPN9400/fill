@@ -123,7 +123,7 @@ async function idVerify(req, res) {
 // ---------- STEP 5: Basic profile -> create account ----------
 
 async function completeProfile(req, res) {
-  const { reg_token, name, dob, gender, interested_in, nationality, state, city, area } = req.body;
+  const { reg_token, name, dob, gender, interested_in, nationality, state, city, area, interests, photo_base64, profession } = req.body;
   const progress = verifyRegToken(reg_token);
   if (!progress || !progress.id_verified) {
     return res.status(401).json({ error: 'Please complete ID verification first.' });
@@ -135,8 +135,8 @@ async function completeProfile(req, res) {
   const insertResult = await pool.query(
     `INSERT INTO users
        (phone_number, email, google_id, face_id, kyc_status, kyc_reference_id,
-        display_name, birth_date, gender, interested_in, nationality, state, city, area, is_verified, verified_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, TRUE, CURRENT_TIMESTAMP)
+        display_name, birth_date, gender, interested_in, nationality, state, city, area, interests, profession, is_verified, verified_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, TRUE, CURRENT_TIMESTAMP)
      RETURNING id`,
     [
       progress.phone_number,
@@ -153,10 +153,22 @@ async function completeProfile(req, res) {
       state,
       city,
       area,
+      Array.isArray(interests) ? interests : [],
+      profession || null,
     ]
   );
 
   const userId = insertResult.rows[0].id;
+
+  // Save the profile photo (base64 for now — see PROJECT_STATUS.md note on
+  // swapping this for real object storage before real users show up)
+  if (photo_base64) {
+    await pool.query(
+      'INSERT INTO user_media (user_id, media_url, display_order) VALUES ($1, $2, 0)',
+      [userId, photo_base64]
+    );
+  }
+
   const sessionToken = jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
   res.status(201).json({ message: 'Account created', user_id: userId, session_token: sessionToken });
