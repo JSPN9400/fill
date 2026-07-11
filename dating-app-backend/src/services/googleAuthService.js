@@ -15,9 +15,10 @@ const client = MOCK_MODE ? null : new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 async function verifyGoogleToken(idToken) {
   if (MOCK_MODE) {
     const fake = JSON.parse(idToken);
+    const normalizedEmail = fake.email.trim().toLowerCase();
     return {
-      googleId: `mock-${fake.email}`,
-      email: fake.email,
+      googleId: `mock-${normalizedEmail}`,
+      email: normalizedEmail,
       emailVerified: true,
       name: fake.name || 'Test User',
     };
@@ -31,7 +32,7 @@ async function verifyGoogleToken(idToken) {
 
   return {
     googleId: payload.sub,
-    email: payload.email,
+    email: payload.email.trim().toLowerCase(),
     emailVerified: payload.email_verified,
     name: payload.name,
   };

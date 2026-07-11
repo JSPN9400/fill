@@ -101,29 +101,55 @@ function showError(elId, message) {
 }
 
 async function apiPost(path, body, isFormData = false) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: isFormData ? {} : { 'Content-Type': 'application/json' },
-    body: isFormData ? body : JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Something went wrong');
-  return data;
+  const wakeupTimer = setTimeout(showWakeupNotice, 2500);
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: isFormData ? {} : { 'Content-Type': 'application/json' },
+      body: isFormData ? body : JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    return data;
+  } finally {
+    clearTimeout(wakeupTimer);
+    hideWakeupNotice();
+  }
+}
+
+let wakeupToastEl = null;
+function showWakeupNotice() {
+  if (wakeupToastEl) return;
+  wakeupToastEl = document.createElement('div');
+  wakeupToastEl.className = 'toast wakeup-toast show';
+  wakeupToastEl.textContent = "Waking up the server — this can take up to 50 seconds on the first request.";
+  document.getElementById('toast-container').appendChild(wakeupToastEl);
+}
+function hideWakeupNotice() {
+  if (!wakeupToastEl) return;
+  wakeupToastEl.remove();
+  wakeupToastEl = null;
 }
 
 // For endpoints outside /api/auth that require the logged-in session token
 async function authFetch(path, options = {}) {
-  const res = await fetch(`${API_ROOT}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: `Bearer ${state.sessionToken}`,
-      ...(options.headers || {}),
-    },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Something went wrong');
-  return data;
+  const wakeupTimer = setTimeout(showWakeupNotice, 2500);
+  try {
+    const res = await fetch(`${API_ROOT}${path}`, {
+      ...options,
+      headers: {
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        Authorization: `Bearer ${state.sessionToken}`,
+        ...(options.headers || {}),
+      },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    return data;
+  } finally {
+    clearTimeout(wakeupTimer);
+    hideWakeupNotice();
+  }
 }
 
 // ===== Step navigation =====

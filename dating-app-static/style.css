@@ -827,3 +827,5 @@ p.step-subtitle {
 .bottom-nav { flex-shrink: 0; }
 .top-bar { flex-shrink: 0; }
 .progress-track { flex-shrink: 0; }
+
+.wakeup-toast { background: #1f1f1f; max-width: 300px; }
