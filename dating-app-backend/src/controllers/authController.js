@@ -167,10 +167,28 @@ async function completeProfile(req, res) {
   const userId = insertResult.rows[0].id;
 
   if (photo_base64) {
-    await pool.query(
-      'INSERT INTO user_media (user_id, media_url, display_order) VALUES ($1, $2, 0)',
-      [userId, photo_base64]
-    );
+    try {
+      // Decode the data URL (e.g. "data:image/jpeg;base64,...") into a real
+      // buffer and upload it through the same storage service profile-edit
+      // uses — keeps every photo consistent (real URL, not raw base64 text)
+      // so later photo management (delete/reorder) works for ALL photos,
+      // not just ones added after signup.
+      const matches = photo_base64.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        const storageService = require('../services/storageService');
+        const mediaUrl = await storageService.uploadPhoto(userId, buffer, mimeType, 'signup-photo.jpg');
+        await pool.query(
+          'INSERT INTO user_media (user_id, media_url, display_order) VALUES ($1, $2, 0)',
+          [userId, mediaUrl]
+        );
+      }
+    } catch (photoErr) {
+      // Don't fail account creation just because the photo upload had an
+      // issue — the user can always add a photo later from Edit Profile.
+      console.error('Signup photo upload failed (account still created):', photoErr);
+    }
   }
 
   const accessToken = generateAccessToken(userId);

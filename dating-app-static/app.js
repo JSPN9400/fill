@@ -1017,8 +1017,10 @@ async function loadFeelingsFeed() {
   showError('feelings-error', '');
   const feed = $('feelings-feed');
   feed.innerHTML = '<div class="empty-state">Loading feelings…</div>';
+  loadSparks(); // independent — don't let a sparks failure block the main feed
   try {
     const feelings = await authFetch('/feelings?limit=30');
+    renderStoriesRow(feelings);
     if (feelings.length === 0) {
       feed.innerHTML = '<div class="empty-state">No feelings shared yet — be the first! Tap the + button.</div>';
       return;
@@ -1042,6 +1044,87 @@ async function loadFeelingsFeed() {
   } catch (err) {
     showError('feelings-error', err.message);
     feed.innerHTML = '';
+  }
+}
+
+// Groups feelings by author (first/most-recent one per person) into a
+// horizontal, gradient-ring "stories" row — tap to visit their profile.
+function renderStoriesRow(feelings) {
+  const row = $('stories-row');
+  const seen = new Set();
+  const uniquePeople = [];
+  feelings.forEach((f) => {
+    if (!seen.has(f.user_id)) {
+      seen.add(f.user_id);
+      uniquePeople.push(f);
+    }
+  });
+
+  row.innerHTML = `
+    <div class="story-item" id="story-your-story">
+      <div class="story-ring empty"><div class="story-avatar">+</div></div>
+      <span class="story-label">Your Story</span>
+    </div>
+  `;
+  uniquePeople.forEach((f) => {
+    const item = document.createElement('div');
+    item.className = 'story-item';
+    item.innerHTML = `
+      <div class="story-ring"><div class="story-avatar">${f.photo_url ? `<img src="${f.photo_url}">` : '🙂'}</div></div>
+      <span class="story-label">${escapeHtml(f.display_name)}</span>
+    `;
+    item.addEventListener('click', () => openUserProfile(f.user_id));
+    row.appendChild(item);
+  });
+
+  $('story-your-story').addEventListener('click', () => goToScreenKeepingNav('composer'));
+}
+
+// "New Sparks" — people who already liked you, shown with quick accept/reject
+async function loadSparks() {
+  try {
+    const sparks = await authFetch('/likes-received');
+    const section = $('sparks-section');
+    if (sparks.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+    $('sparks-count').textContent = sparks.length;
+    const row = $('sparks-row');
+    row.innerHTML = '';
+    sparks.forEach((s) => {
+      const card = document.createElement('div');
+      card.className = 'spark-card';
+      card.innerHTML = `
+        <div class="spark-avatar">${s.photo_url ? `<img src="${s.photo_url}">` : '🙂'}</div>
+        <div class="spark-name">${escapeHtml(s.display_name)}</div>
+        <div class="spark-sub">${s.swipe_type === 'superlike' ? '⭐ Super liked you' : 'Wants to connect'}</div>
+        <div class="spark-actions">
+          <button class="spark-btn reject" title="Not interested">✕</button>
+          <button class="spark-btn accept" title="Like back">♥</button>
+        </div>
+      `;
+      card.querySelector('.reject').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await authFetch('/swipe', { method: 'POST', body: JSON.stringify({ swipee_id: s.id, swipe_type: 'dislike' }) });
+          card.remove();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+      card.querySelector('.accept').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          const result = await authFetch('/swipe', { method: 'POST', body: JSON.stringify({ swipee_id: s.id, swipe_type: 'like' }) });
+          showToast(result.matched ? `🎉 It's a match with ${s.display_name}!` : 'Liked back!', 'success');
+          card.remove();
+        } catch (err) { showToast(err.message, 'error'); }
+      });
+      card.addEventListener('click', () => openUserProfile(s.id));
+      row.appendChild(card);
+    });
+  } catch (err) {
+    $('sparks-section').style.display = 'none';
   }
 }
 

@@ -264,6 +264,19 @@
       <!-- Feelings feed screen (Snapchat-style: photo + caption) -->
       <div class="content" id="screen-feelings" style="display:none;">
         <h1 class="step-title" style="margin-top:4px;">Feelings</h1>
+
+        <!-- Stories row: recent feelings, grouped by person, gradient-ring avatars -->
+        <div id="stories-row" class="stories-row"></div>
+
+        <!-- New Sparks: people who already liked you -->
+        <div id="sparks-section" style="display:none;">
+          <div class="sparks-heading">
+            <h2>New Sparks</h2>
+            <span class="sparks-count" id="sparks-count"></span>
+          </div>
+          <div id="sparks-row" class="sparks-row"></div>
+        </div>
+
         <p class="step-subtitle" style="margin-bottom:12px;">What's on your mind right now? Tap a card to visit their profile.</p>
         <div id="feelings-error"></div>
         <div id="feelings-feed" class="feelings-grid"></div>

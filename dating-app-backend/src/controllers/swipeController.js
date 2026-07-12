@@ -105,4 +105,32 @@ async function swipe(req, res) {
   res.json({ matched: true, match_id: matchId });
 }
 
-module.exports = { swipe };
+/**
+ * "New Sparks" — people who already liked/superliked me, but I haven't
+ * swiped back yet (so no match exists). Lets someone accept (like back,
+ * instantly creating a match) or reject (dislike) directly, without
+ * needing to stumble onto them again in the normal discover feed.
+ */
+async function getLikesReceived(req, res) {
+  const userId = Number(req.userId);
+
+  const result = await pool.query(
+    `SELECT u.id, u.display_name, u.birth_date, u.city, u.state, u.is_verified,
+            s.swipe_type, s.created_at AS liked_at,
+            (SELECT media_url FROM user_media WHERE user_id = u.id ORDER BY display_order ASC LIMIT 1) AS photo_url
+     FROM swipes s
+     JOIN users u ON u.id = s.swiper_id
+     WHERE s.swipee_id = $1
+       AND s.swipe_type IN ('like', 'superlike')
+       AND NOT EXISTS (
+         SELECT 1 FROM swipes s2 WHERE s2.swiper_id = $1 AND s2.swipee_id = s.swiper_id
+       )
+     ORDER BY s.created_at DESC
+     LIMIT 30`,
+    [userId]
+  );
+
+  res.json(result.rows);
+}
+
+module.exports = { swipe, getLikesReceived };

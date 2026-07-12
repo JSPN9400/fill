@@ -10,6 +10,7 @@ router.use(requireAuth);
 
 router.get('/discover', asyncHandler(discoveryController.getFeed));
 router.post('/swipe', asyncHandler(swipeController.swipe));
+router.get('/likes-received', asyncHandler(swipeController.getLikesReceived));
 router.get('/matches', asyncHandler(matchController.listMatches));
 
 module.exports = router;
